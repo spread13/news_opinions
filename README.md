@@ -1,3 +1,10 @@
+## Getting started
+
+```
+npm install
+
+coffee app.coffee
+```
 
 ## update schema
 
