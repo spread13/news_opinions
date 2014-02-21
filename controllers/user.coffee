@@ -1,173 +1,114 @@
+crypto = require("crypto")
+jwt = require("jwt-simple")
 passport = require("passport")
 _ = require("underscore")
+config = require("../config/config")
+Err = require("../lib/err")
+VD = require("../lib/validator")
 
-###
-GET /login
-Login page.
-###
-exports.getLogin = (req, res) ->
-  return res.redirect("/") if req.user
-  res.render "account/login", title: "Login"
+createToken = (user) ->
+  profile =
+    id: user.id
+    expires: (Math.floor(Date.now()/60000) + config.tokenExpires)
+  profile.name = user.name if user.name
 
+  res =
+    id: jwt.encode(profile, config.secret)
+    expires: profile.expires
+  res.name = profile.name if profile.name
+  res
+
+encPassword = (pwd) ->
+  try
+    sha1 = crypto.createHash('sha1')
+    sha1.update(pwd + config.salt).digest('hex')
+  catch
+    null
 
 ###
 POST /login
 Sign in using email and password.
-@param email
-@param password
+@param email, password
 ###
 exports.postLogin = (req, res, next) ->
-  req.assert("email", "Email is not valid").isEmail()
-  req.assert("password", "Password cannot be blank").notEmpty()
-  errors = req.validationErrors()
-  if errors
-    req.flash "errors", errors
-    return res.redirect("/login")
-  passport.authenticate("local", (err, user, info) ->
-    return next(err)  if err
-    unless user
-      req.flash "errors", msg: info.message
-      return res.redirect("/login")
-    req.logIn user, (err) ->
-      return next(err) if err
-      res.redirect "/"
-  ) req, res, next
+  unless VD.validEmail(req.body.email)
+    return next(Err 400, "Invalid Email")
+  unless VD.validPassword(req.body.password)
+    return next(Err 400, "Invalid Password")
 
+  req.getConnection (err, conn) ->
+    return next(err) if err
 
-###
-GET /logout
-Log out.
-###
-exports.logout = (req, res) ->
-  req.logout()
-  res.redirect "/"
-
-
-###
-GET /signup
-Signup page.
-###
-exports.getSignup = (req, res) ->
-  return res.redirect("/") if req.user
-  res.render "account/signup", title: "Create Account"
-
+    conn.query 'select * from users where email = ?', [req.body.email], (err, rows) ->
+      unless user = rows[0]
+        return next(Err 404, "No such user")
+      if encPassword(req.body.password) != user.password
+        return next(Err 400, "Invalid email or password")
+      res.json {token: createToken(user)}, 201
 
 ###
 POST /signup
 Create a new local account.
-@param email
-@param password
+@param email, password
 ###
 exports.postSignup = (req, res, next) ->
-  req.assert("email", "Email is not valid").isEmail()
-  req.assert("password", "Password must be at least 4 characters long").len 4
-  req.assert("confirmPassword", "Passwords do not match").equals req.body.password
-  errors = req.validationErrors()
-  if errors
-    req.flash "errors", errors
-    return res.redirect("/signup")
- 
+  unless VD.validEmail(req.body.email)
+    return next(Err 400, "Invalid Email")
+  unless VD.validPassword(req.body.password)
+    return next(Err 400, "Invalid Password")
+
   req.getConnection (err, conn) ->
     return next(err) if err
     conn.query "select email from users where email = ?", [req.body.email], (err, rows) ->
       return next(err) if err
       if rows.length > 0
-        req.flash "errors", msg: "User with that email already exists."
-        return res.redirect("/signup")
+        return next(Err 400, "User with that email already exists.")
 
-      conn.query "insert into users (email, password) values (?, ?)", [req.body.email, req.body.password], (err) ->
+      conn.query "insert into users (email, password) values (?, ?)", [req.body.email, encPassword(req.body.password)], (err) ->
         return next(err) if err
         conn.query "select * from users where email = ?", [req.body.email], (err, rows) ->
           return next(err) if err
-          req.logIn rows[0], (err) ->
-            return next(err) if err
-            res.redirect "/"
+          res.json {}
 
-
-###
-GET /account
-Profile page.
-###
-exports.getAccount = (req, res) ->
-  res.render "account/profile", title: "Account Management"
 
 
 ###
-POST /account/profile
-Update profile information.
 ###
-exports.postUpdateProfile = (req, res, next) ->
+exports.get = (req, res, next) ->
   req.getConnection (err, conn) ->
     return next(err) if err
     conn.query "select * from users where id = ?", [req.user.id], (err,rows) ->
       return next(err) if err
+      return next(404, "No such user") if rows.length == 0
+
       user = rows[0]
-      conn.query "update users set email = ?, name = ? where id = ?", [req.body.email || user.email, req.body.name || user.name, req.user.id], (err) -> 
-        return next(err)  if err
-        req.flash "success", msg: "Profile information updated."
-        res.redirect "/account"
-
+      delete user.password
+      res.json user
 
 ###
-POST /account/password
-Update current password.
-@param password
+@params: email, name
 ###
-exports.postUpdatePassword = (req, res, next) ->
-  req.assert("password", "Password must be at least 4 characters long").len 4
-  req.assert("confirmPassword", "Passwords do not match").equals req.body.password
-  errors = req.validationErrors()
-  if errors
-    req.flash "errors", errors
-    return res.redirect("/account")
-
+exports.update = (req, res, next) ->
   req.getConnection (err, conn) ->
     return next(err) if err
     conn.query "select * from users where id = ?", [req.user.id], (err,rows) ->
-      return next(err)  if err
+      return next(err) if err
+      return next(404, "No such user") if rows.length == 0
+
       user = rows[0]
-      conn.query "update users set password = ? where id = ?", [req.body.password, req.user.id], (err) -> 
+      user.email = req.body.email if req.body.email
+      user.name = req.body.name if req.body.name
+      conn.query "update users set email = ?, name = ? where id = ?", [user.email, user.name, req.user.id], (err) -> 
         return next(err)  if err
-        req.flash "success", msg: "Password has been changed."
-        res.redirect "/account"
-  
+        res.json {token: createToken(user)}, 201
 
 ###
-POST /account/delete
-Delete user account.
-@param id - User ObjectId
 ###
-exports.postDeleteAccount = (req, res, next) ->
+exports.del = (req, res, next) ->
   req.getConnection (err, conn) ->
     return next(err) if err
-    conn.query 'delete from users where id = ?', [req.user.id], (err) ->
-      return next(err)  if err
-      req.logout()
-      res.redirect "/"
+    conn.query "delete from users where id = ?", [req.user.id], (err) ->
+      return next(err) if err
+      res.json {}
 
 
-###
-GET /account/unlink/:provider
-Unlink OAuth2 provider from the current user.
-@param provider
-@param id - User ObjectId
-###
-exports.getOauthUnlink = (req, res, next) ->
-  provider = req.params.provider
-  User.findById req.user.id, (err, user) ->
-    return next(err)  if err
-    user[provider] = `undefined`
-    user.tokens = _.reject(user.tokens, (token) ->
-      token.kind is provider
-    )
-    user.save (err) ->
-      return next(err)  if err
-      req.flash "info",
-        msg: provider + " account has been unlinked."
-
-      res.redirect "/account"
-      return
-
-    return
-
-  return
