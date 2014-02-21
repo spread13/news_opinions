@@ -3,7 +3,7 @@ module.exports =
     host: 'spread.cz6vgpg0twvp.ap-northeast-1.rds.amazonaws.com'
     port: 3306
     user: 'spread'
-    password: 'spread5435'
+    password: 'spread00'
     database: 'spread'
 
   sessionSecret: "deadbeaf"
