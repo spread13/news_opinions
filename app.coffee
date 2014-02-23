@@ -17,13 +17,14 @@ Err = require("./lib/err")
 Load controllers.
 ###
 userController = require("./controllers/user")
+siteController = require("./controllers/site")
 
 ###
 API keys + Passport configuration.
 ###
 secrets = require("./config/secrets")
 
-pool = mysql.createPool secrets.mysql
+pool = mysql.createPool _.extend {multipleStatements:true, debug:true}, secrets.mysql
 
 auth = (req, res, next) ->
   unless token = req.headers.authorization
@@ -103,6 +104,11 @@ app.use (err, req, res, next) ->
 ###
 Application routes.
 ###
+
+app.post "/sites", auth, siteController.create
+app.get "/sites", auth, siteController.list
+app.del "/sites/:id", auth, siteController.del
+
 app.post "/login", userController.postLogin
 app.post "/users", userController.postSignup
 app.get "/me", auth, userController.get
