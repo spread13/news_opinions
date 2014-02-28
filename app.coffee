@@ -107,7 +107,9 @@ Application routes.
 
 app.post "/sites", auth, siteController.create
 app.get "/sites", auth, siteController.list
+app.get "/sites/:id/articles", auth, siteController.articles
 app.del "/sites/:id", auth, siteController.del
+app.get "/articles", auth, siteController.myArticles
 
 app.post "/login", userController.postLogin
 app.post "/users", userController.postSignup

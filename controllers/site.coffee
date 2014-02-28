@@ -6,33 +6,47 @@ VD = require("../lib/validator")
 exports.create = (req, res, next) ->
   unless VD.validUrl(url = req.body.url)
     return next(Err 400, "Invalid URL")
-  unless VD.validRss(rss = req.body.rss)
+  if (rss = req.body.rss) && !VD.validRss(req.body.rss)
     return next(Err 400, "Invalid RSS")
-  unless VD.validTitle(title = req.body.title)
+  if (title = req.body.title) && !VD.validTitle(req.body.title)
     return next(Err 400, "Invalid Title")
 
-  url = url && VD.toSqlSafe(url) || null
+  url = VD.toSqlSafe(url)
   title = title && VD.toSqlSafe(title) || null
-  rss = VD.toSqlSafe(rss)
-  sql = '
-    start transaction;
-    insert into sites (url, rss, title, rss_type) values (?,?,?,?) on duplicate key update rss_type = ?;
-    select @last := LAST_INSERT_ID();
-    insert into user_sites (user_id, site_id, credentials) values (?,@last,?);
-    commit; '
+  rss = rss && VD.toSqlSafe(rss) || null
+  cred = null
+
   req.getConnection (err, conn) ->
     return next(err) if err
 
-    conn.query sql, [url, rss, title, 0, 0, req.user.id, null], (err) ->
+    sql = if rss
+      'select id from sites where rss = ?'
+    else
+      'select id from sites where url = ?'
+    conn.query sql, [rss || url], (err, sites) ->
       return next(err) if err
-      res.json {}
 
+      if sites.length > 0
+        sql = 'insert ignore into user_sites (user_id, site_id, credentials) values (?,?,?);'
+        conn.query sql, [req.user.id, sites[0].id, cred], (err) ->
+          return next(err) if err
+          res.json {}
+      else
+        sql = '
+          start transaction;
+          insert into sites (url, rss) values (?,?);
+          select @last := LAST_INSERT_ID();
+          insert into user_sites (user_id, site_id, title, credentials) values (?,@last,?,?);
+          commit;'
+        conn.query sql, [url, rss, req.user.id, title, cred], (err) ->
+          return next(err) if err
+          res.json {}
 
 # arrays of id, url, rss, title, rss_type, credentials, updated_at
 exports.list = (req, res, next) ->
   req.getConnection (err, conn) ->
     return next(err) if err
-    conn.query "select * from sites as s, user_sites as us where us.user_id = ?;", [req.user.id], (err, rows) ->
+    conn.query "select * from sites as s, user_sites as us where us.user_id = ? and us.site_id = s.id;", [req.user.id], (err, rows) ->
       return next(err) if err
 
       res.json rows.map (r) ->
@@ -40,10 +54,8 @@ exports.list = (req, res, next) ->
         url: r.url
         rss: r.rss
         title: r.title
-        rss_type: r.rss_type
         credentials: r.credentials
-        updated_at: r.updated_at.getTime()
-
+        subscribed_at: r.subscribed_at.getTime()
 
 exports.del = (req, res, next) ->
   id = parseInt req.params.id
@@ -51,14 +63,26 @@ exports.del = (req, res, next) ->
 
   req.getConnection (err, conn) ->
     return next(err) if err
-    sql = '
-      start transaction;
-      select count(*) from user_sites where site_id=? into @n;
-      update sites set rss_type = 2 where id = ? and rss_type=1 and @n =1;
-      delete from user_sites where user_id=? and site_id=?;
-      commit; '
-    conn.query sql, [id, id, req.user.id, id], (err) ->
+    sql = 'delete from user_sites where user_id=? and site_id=?;'
+    conn.query sql, [req.user.id, id], (err) ->
       return next(err) if err
       res.json {}
 
+exports.myArticles = (req, res, next) ->
+  req.getConnection (err, conn) ->
+    return next(err) if err
 
+    sql = 'select site_id from user_sites where user_id = ?;'
+    conn.query sql, [req.user.id], (err, sites) ->
+      return next(err) if err
+      return next(Err 404, "No registered sites") if sites.length == 0
+
+      sql = 'select * from articles where site_id in (?) order by created_at desc limit 50'
+      conn.query sql, [sites], (err, articles) ->
+        return next(err) if err
+        res.json articles
+
+exports.articles = (req, res, next) ->
+  id = parseInt req.params.id
+  return next(Err 400, "Invalid id") if isNaN id
+  res.json {}

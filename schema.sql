@@ -1,3 +1,5 @@
+DROP TABLE IF EXISTS users, sites, user_sites, articles, opinions;
+
 CREATE TABLE IF NOT EXISTS users(
   id int(11) NOT NULL AUTO_INCREMENT,
   name varchar(63) DEFAULT NULL,
@@ -14,22 +16,20 @@ CREATE TABLE IF NOT EXISTS users(
 CREATE TABLE IF NOT EXISTS sites(
   id int(11) NOT NULL AUTO_INCREMENT,
   rss varchar(255) NOT NULL,
-  url varchar(255) DEFAULT NULL,  # if rss type..
-  title varchar(63) DEFAULT NULL,
-  rss_type int(1) DEFAULT 0,      # 0 url, 1 active rss, 2 inactive rss
+  url varchar(255) DEFAULT NULL,
+  subscribed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+               ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  UNIQUE KEY rss (rss),
-  INDEX rss_active (rss,rss_type)
+  UNIQUE KEY url (url), 
+  UNIQUE KEY rss (rss)
 );
 
 CREATE TABLE IF NOT EXISTS user_sites(
   user_id int(11) NOT NULL,
   site_id int(11) NOT NULL,
+  title varchar(63) DEFAULT NULL,
   credentials varchar(255) DEFAULT NULL,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-               ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (user_id,site_id),
-  INDEX site_id (site_id)
+  PRIMARY KEY (user_id,site_id)
   # FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   # FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE
 );
@@ -43,9 +43,7 @@ CREATE TABLE IF NOT EXISTS articles(
   thumbnail varchar(255) DEFAULT NULL,
   category varchar(63) DEFAULT NULL,
   created_at TIMESTAMP DEFAULT 0,
-  PRIMARY KEY (id),
-  INDEX site_id (site_id),
-  INDEX category (category)
+  PRIMARY KEY (id)
   # FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE SET NULL
 );
 

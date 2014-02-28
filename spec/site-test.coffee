@@ -6,7 +6,8 @@ testuser =
   password: 'asdf00'
 
 site0 =
-  rss: 'http://www.naver.com'
+  rss: 'http://blog.rss.naver.com/donodonsu.xml'
+  url: 'http://www.naver.com'
 
 log = (res) ->
   console.log """
@@ -88,6 +89,14 @@ _5 = (res) ->
     .set('Accept', 'application/json')
     .set('Authorization', token)
     .expect(200)
+    .end next(_600)
+
+_600 = (res) ->
+  req.post("/sites")
+    .send(site0)
+    .set('Accept', 'application/json')
+    .set('Authorization', token)
+    .expect(200)
     .end next(_6)
 
 _6 = (res) ->
@@ -95,11 +104,20 @@ _6 = (res) ->
     .set('Accept', 'application/json')
     .set('Authorization', token)
     .expect(200)
+    .end next(_700)
+
+site_id = null
+_700 = (res) ->
+  site_id = res.body[0].id
+
+  req.get("/articles")
+    .set('Accept', 'application/json')
+    .set('Authorization', token)
+    .expect(200)
     .end next(_7)
 
 _7 = (res) ->
-  id = res.body[0].id
-  req.del("/sites/#{id}")
+  req.del("/sites/#{site_id}")
     .set('Accept', 'application/json')
     .set('Authorization', token)
     .expect(200)
