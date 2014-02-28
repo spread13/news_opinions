@@ -11,13 +11,10 @@ exports.create = (req, res, next) ->
   if (title = req.body.title) && !VD.validTitle(req.body.title)
     return next(Err 400, "Invalid Title")
 
-  url = VD.toSqlSafe(url)
-  title = title && VD.toSqlSafe(title) || null
-  rss = rss && VD.toSqlSafe(rss) || null
   cred = null
-
   req.getConnection (err, conn) ->
     return next(err) if err
+
 
     sql = if rss
       'select id from sites where rss = ?'
@@ -77,8 +74,9 @@ exports.myArticles = (req, res, next) ->
       return next(err) if err
       return next(Err 404, "No registered sites") if sites.length == 0
 
-      sql = 'select * from articles where site_id in (?) order by created_at desc limit 50'
-      conn.query sql, [sites], (err, articles) ->
+      site_ids = sites.map (x) -> x.site_id
+      sql = 'select * from articles where site_id in (??) order by created_at desc limit 50'
+      conn.query sql, site_ids, (err, articles) ->
         return next(err) if err
         res.json articles
 

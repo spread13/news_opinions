@@ -17,8 +17,7 @@ CREATE TABLE IF NOT EXISTS sites(
   id int(11) NOT NULL AUTO_INCREMENT,
   rss varchar(255) NOT NULL,
   url varchar(255) DEFAULT NULL,
-  subscribed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-               ON UPDATE CURRENT_TIMESTAMP,
+  subscribed_at bigint DEFAULT 0,
   PRIMARY KEY (id),
   UNIQUE KEY url (url), 
   UNIQUE KEY rss (rss)
