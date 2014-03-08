@@ -11,10 +11,8 @@ exports.create = (req, res, next) ->
   if (title = req.body.title) && !VD.validTitle(req.body.title)
     return next(Err 400, "Invalid Title")
 
-  cred = null
   req.getConnection (err, conn) ->
     return next(err) if err
-
 
     sql = if rss
       'select id from sites where rss = ?'
@@ -24,8 +22,8 @@ exports.create = (req, res, next) ->
       return next(err) if err
 
       if sites.length > 0
-        sql = 'insert ignore into user_sites (user_id, site_id, credentials) values (?,?,?);'
-        conn.query sql, [req.user.id, sites[0].id, cred], (err) ->
+        sql = 'insert ignore into user_sites (user_id, site_id, title) values (?,?,?);'
+        conn.query sql, [req.user.id, sites[0].id, title], (err) ->
           return next(err) if err
           res.json {}
       else
@@ -33,13 +31,13 @@ exports.create = (req, res, next) ->
           start transaction;
           insert into sites (url, rss) values (?,?);
           select @last := LAST_INSERT_ID();
-          insert into user_sites (user_id, site_id, title, credentials) values (?,@last,?,?);
+          insert into user_sites (user_id, site_id, title) values (?,@last,?);
           commit;'
-        conn.query sql, [url, rss, req.user.id, title, cred], (err) ->
+        conn.query sql, [url, rss, req.user.id, title], (err) ->
           return next(err) if err
           res.json {}
 
-# arrays of id, url, rss, title, rss_type, credentials, updated_at
+# arrays of id, url, rss, title, rss_type, updated_at
 exports.list = (req, res, next) ->
   req.getConnection (err, conn) ->
     return next(err) if err
@@ -51,7 +49,6 @@ exports.list = (req, res, next) ->
         url: r.url
         rss: r.rss
         title: r.title
-        credentials: r.credentials
         subscribed_at: r.subscribed_at.getTime()
 
 exports.del = (req, res, next) ->

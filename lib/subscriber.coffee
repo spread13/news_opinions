@@ -20,7 +20,7 @@ pool = mysql.createPool
 
 class Subscriber
   @scheduleInterval: 10000
-  @subscribeInterval: 1000 * 60
+  @subscribeInterval: 1000 * 60 
 
   constructor: (@cell) ->
     @eventEmitter = new EventEmitter()
@@ -54,20 +54,31 @@ class Subscriber
     sql = 'select * from sites where rss is not null and subscribed_at < ? order by subscribed_at asc limit 50;'
     conn.query sql, [Date.now() - Subscriber.subscribeInterval], (err, sites) ->
       return cb(err) if err
+
+      expected = 1
+      err = null
+      done = (_err) ->
+        err = _err if _err
+        return if --expected > 0
+        cb err
+
       for site in sites
-        self._request conn, site.id, site.rss, cb if site.rss
-  
+        if site.rss
+          expected++
+          self._request conn, site.id, site.rss, done
+      done()  
+
   _request: (conn, site_id, url, cb) ->
     console.log 'r'
     req = request(url)
     feedparser = new Feedparser()
 
+    self = @
     req.setMaxListeners 50
     req.setHeader 'user-agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/31.0.1650.63 Safari/537.36'
     req.setHeader 'accept', 'text/html,application/xhtml+xml'
-    req.on 'error', cb
+    req.on 'error', self.next
 
-    self = @
     req.on 'response', (res) ->
       stream = @
       return cb(res.statusCode) if res.statusCode != 200
@@ -76,22 +87,22 @@ class Subscriber
       if charset && !/utf-*8/i.test(charset)
         try
           iconv = new Iconv charset, 'utf-8'
-          iconv.on 'error', cb
+          iconv.on 'error', self.next
           stream = stream.pipe iconv
         catch err
           return cb(err)
       stream.pipe feedparser        
 
     posts = []
-    feedparser.on 'error', cb
+    feedparser.on 'error', self.next
     feedparser.on 'end', (err) ->
       return cb(err) if err
       self.pushArticle conn, posts, (err) ->
         return cb(err) if err
         self.updateSubscribedTime conn, site_id, cb
     feedparser.on 'readable', ->
-      while post = @read()
-        posts.push post
+        while post = @read()
+          posts.push post
 
   updateSubscribedTime: (conn, site_id, cb) ->
     sql = 'update sites set subscribed_at = ? where id = ?;'
@@ -108,7 +119,7 @@ class Subscriber
 
     return cb() if params.length == 0
 
-    sql = "insert into articles (url, title, description, thumbnail, category, created_at) values #{params.map((p) -> '(?)').join(',')};"
+    sql = "insert ignore into articles (url, title, description, thumbnail, category, created_at) values #{params.map((p) -> '(?)').join(',')};"
     console.log "pushed #{params.length}"
     conn.query sql, params, cb
       
