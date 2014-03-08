@@ -49,7 +49,7 @@ exports.list = (req, res, next) ->
         url: r.url
         rss: r.rss
         title: r.title
-        subscribed_at: r.subscribed_at.getTime()
+        subscribed_at: r.subscribed_at
 
 exports.del = (req, res, next) ->
   id = parseInt req.params.id
@@ -72,7 +72,7 @@ exports.myArticles = (req, res, next) ->
       return next(Err 404, "No registered sites") if sites.length == 0
 
       site_ids = sites.map (x) -> x.site_id
-      sql = 'select * from articles where site_id in (??) order by created_at desc limit 50'
+      sql = 'select * from articles where site_id in (?) order by created_at desc limit 50'
       conn.query sql, site_ids, (err, articles) ->
         return next(err) if err
         res.json articles
