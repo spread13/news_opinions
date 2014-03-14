@@ -2,6 +2,31 @@ config = require("../config/config")
 Err = require("../lib/err")
 VD = require("../lib/validator")
 
+exports.addTwitter = (req, res, next) ->
+  req.getConnection (err, conn) ->
+    return next(err) if err
+
+    sql = 'select if from sites s, user_sites us where us.user_id = ? and us.site_id = s.id and s.url = ?;'
+    conn.query sql, [req.user.id, 'twitter'], (err, sites) ->
+      return next(err) if err
+
+      if sites.length > 0
+        sql = 'update sites set credentials= ? where id = ?;'
+        conn.query sql, [req.user.id, sites[0].id], (err) ->
+          return next(err) if err
+          res.json {}
+      else
+        sql = '
+          start transaction;
+          insert into sites (url, spec) values (?,?);
+          select @last := LAST_INSERT_ID();
+          insert into user_sites (user_id, site_id, title) values (?,@last,?);
+          commit;'
+        conn.query sql, [url, rss, req.user.id, title], (err) ->
+          return next(err) if err
+          res.json {}
+
+
 # url, rss, title
 exports.create = (req, res, next) ->
   unless VD.validUrl(url = req.body.url)
@@ -72,10 +97,12 @@ exports.myArticles = (req, res, next) ->
       return next(Err 404, "No registered sites") if sites.length == 0
 
       site_ids = sites.map (x) -> x.site_id
-      sql = 'select * from articles where site_id in (?) order by created_at desc limit 50'
-      conn.query sql, site_ids, (err, articles) ->
+      sql = 'select a.id, a.site_id, a.url, a.title, a.description, a.thumbnail, a.category, a.created_at, o.user_id from articles a left join opinions o on o.user_id =? and a.id = o.article_id where a.site_id in (?) order by a.added_at desc limit 50'
+      conn.query sql, [req.user.id, site_ids], (err, articles) ->
         return next(err) if err
+        console.log articles
         res.json articles
+
 
 exports.articles = (req, res, next) ->
   id = parseInt req.params.id

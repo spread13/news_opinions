@@ -31,10 +31,9 @@ module.exports =
     passReqToCallback: true
 
   twitter:
-    consumerKey: "Your Consumer Key"
-    consumerSecret: "Your Consumer Secret"
+    consumerKey: "jOQzTXzdvkUoFuBmawIIQ"
+    consumerSecret: "THXpCvuGwjNiwbPeYmTlugeo26bdZfuwuk0MNkf6nw"
     callbackURL: "/auth/twitter/callback"
-    passReqToCallback: true
 
   google:
     clientID: "Your Client ID"

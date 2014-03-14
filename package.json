@@ -31,7 +31,9 @@
     "mysql": "~2.0.1",
     "supertest": "~0.9.0",
     "feedparser": "~0.16.6",
-    "iconv": "~2.0.7"
+    "iconv": "~2.0.7",
+    "oauth": "~0.9.11",
+    "sax": "~0.6.0"
   },
   "devDependencies": {},
   "repository": {

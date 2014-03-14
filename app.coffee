@@ -10,6 +10,7 @@ expressValidator = require("express-validator")
 jwt = require("jwt-simple")
 mysql = require("mysql")
 _ = require("underscore")
+OAuth = require('oauth').OAuth
 config = require("./config/config")
 Err = require("./lib/err")
 
@@ -18,6 +19,7 @@ Load controllers.
 ###
 userController = require("./controllers/user")
 siteController = require("./controllers/site")
+opinionController = require("./controllers/opinion")
 
 ###
 API keys + Passport configuration.
@@ -59,9 +61,13 @@ month = (day * 30)
 app.set "port", process.env.PORT or 3333
 
 app.use express.logger("dev")
+
 app.use express.cookieParser()
 app.use express.json()
 app.use express.urlencoded()
+app.use express.session
+  key: 'sid'
+  secret: config.secret
 app.use expressValidator()
 app.use express.methodOverride()
 app.use (req, res, next) ->
@@ -105,17 +111,53 @@ app.use (err, req, res, next) ->
 Application routes.
 ###
 
+app.post "/sites/twitter", auth, siteController.addTwitter
 app.post "/sites", auth, siteController.create
 app.get "/sites", auth, siteController.list
 app.get "/sites/:id/articles", auth, siteController.articles
 app.del "/sites/:id", auth, siteController.del
 app.get "/articles", auth, siteController.myArticles
 
+app.post "/articles/:id/opinions", auth, opinionController.create
+app.get "/users/:id/opinions", auth, opinionController.list
+
 app.post "/login", userController.postLogin
 app.post "/users", userController.postSignup
 app.get "/me", auth, userController.get
 app.put "/me", auth, userController.update
 app.del "/me", auth, userController.del
+
+twitterOauth = new OAuth(
+  'https://api.twitter.com/oauth/request_token',
+  'https://api.twitter.com/oauth/access_token',
+  secrets.twitter.consumerKey,
+  secrets.twitter.consumerSecret,
+  '1.0A',
+  null,
+  'HMAC-SHA1'
+)
+
+app.get "/auth/twitter", (req, res, next) ->
+  twitterOauth.getOAuthRequestToken (err, token, tokenSecret, result) ->
+    return res.send("Authentication fail") if err
+    req.session.oauth =
+      token: token
+      tokenSecret: tokenSecret
+    res.redirect "https://api.twitter.com/oauth/authenticate?oauth_token=#{token}"
+   
+app.get "/auth/twitter/callback", (req, res, next) ->
+  oauth = req.session.oauth
+  twitterOauth.getOAuthAccessToken(
+    oauth.token,
+    oauth.tokenSecret,
+    req.query.oauth_verifier,
+    (err, accessToken, accessSecret, result) ->
+      return res.send("fail") if err
+      req.session.oauth =
+        accessToken: accessToken
+        accessSecret: accessSecret
+      res.send("<script>window.close();</script>")
+  )
 
 ###
 OAuth routes for sign-in.
@@ -142,11 +184,7 @@ app.get "/auth/google/callback", passport.authenticate("google",
   successRedirect: "/"
   failureRedirect: "/login"
 )
-app.get "/auth/twitter", passport.authenticate("twitter")
-app.get "/auth/twitter/callback", passport.authenticate("twitter",
-  successRedirect: "/"
-  failureRedirect: "/login"
-)
+
 
 ###
 OAuth routes for API examples that require authorization.

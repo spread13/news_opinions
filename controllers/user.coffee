@@ -79,7 +79,7 @@ exports.get = (req, res, next) ->
     return next(err) if err
     conn.query "select * from users where id = ?", [req.user.id], (err,rows) ->
       return next(err) if err
-      return next(404, "No such user") if rows.length == 0
+      return next(Err 401, "No such user") if rows.length == 0
 
       user = rows[0]
       delete user.password
