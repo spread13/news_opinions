@@ -4,7 +4,7 @@ module.exports =
     port: 3306
     user: 'spread'
     password: 'spread00'
-    database: 'spread'
+    database: 'spread2'
 
   sessionSecret: "deadbeaf"
   sendgrid:

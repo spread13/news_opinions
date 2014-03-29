@@ -97,7 +97,7 @@ exports.myArticles = (req, res, next) ->
       return next(Err 404, "No registered sites") if sites.length == 0
 
       site_ids = sites.map (x) -> x.site_id
-      sql = 'select a.id, a.site_id, a.url, a.title, a.description, a.thumbnail, a.category, a.created_at, o.user_id from articles a left join opinions o on o.user_id =? and a.id = o.article_id where a.site_id in (?) order by a.added_at desc limit 50'
+      sql = 'select a.id, a.site_id, a.url, a.title, a.description, a.thumbnail, a.category, a.created_at, o.user_id from articles a left join opinions o on o.user_id =? and a.id = o.article_id where a.site_id in (?) order by a.added_at desc'
       conn.query sql, [req.user.id, site_ids], (err, articles) ->
         return next(err) if err
         console.log articles

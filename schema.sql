@@ -1,4 +1,4 @@
-#DROP TABLE IF EXISTS users, sites, user_sites, articles, opinions;
+DROP TABLE IF EXISTS users, sites, user_sites, articles, opinions;
 
 CREATE TABLE IF NOT EXISTS users(
   id int(11) NOT NULL AUTO_INCREMENT,
@@ -66,5 +66,5 @@ CREATE TABLE IF NOT EXISTS opinions(
 ) DEFAULT CHARSET=utf8;
 
 
-INSERT INTO sites (rss, url) values ('http://blog.rss.naver.com/donodonsu.xml', 'http://www.naver.com');
+#INSERT INTO sites (rss, url) values ('http://blog.rss.naver.com/donodonsu.xml', 'http://www.naver.com');
 

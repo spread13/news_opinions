@@ -1,12 +1,14 @@
 fs             = require('fs')
+url            = require('url')
 createDomain   = require('domain').create
 mysql          = require("mysql")
 request        = require("request")
-Feedparser     = require("feedparser")
+htmlparser     = require("htmlparser2")
 Iconv          = require("iconv").Iconv
-Sax            = require("sax")
 EventEmitter   = require('events').EventEmitter
 _              = require('underscore')
+Boilerpipe     = require('boilerpipe')
+cheerio        = require('cheerio')
 config         = require '../config/config'
 secrets        = require '../config/secrets'
 
@@ -23,7 +25,7 @@ pool = mysql.createPool
 
 class Subscriber
   @scheduleInterval: 10000
-  @subscribeInterval: 1000 * 10 
+  @subscribeInterval: 1000 * 60 
 
   constructor: (@cell) ->
     @eventEmitter = new EventEmitter()
@@ -66,7 +68,8 @@ class Subscriber
     console.log 's'
     self = @
 
-    sql = 'select * from sites where rss is not null and subscribed_at < ? order by subscribed_at asc limit 50;'
+    sql = 'select * from sites where subscribed_at < ? order by subscribed_at asc limit 2;'
+    #sql = 'select * from sites;'
     conn.query sql, [Date.now() - Subscriber.subscribeInterval], (err, sites) ->
       return cb(err) if err
 
@@ -78,15 +81,21 @@ class Subscriber
         cb err
 
       for site in sites
-        if site.rss
-          expected++
-          self._request conn, site.id, site.rss, done
+        expected++
+        self._request conn, site.id, site.url, done
       done()  
 
-  _request: (conn, site_id, url, cb) ->
-    console.log "r: #{url}"
-    req = request(url)
-    feedparser = new Feedparser()
+  normalizeUrl: (u) ->
+    parsed = url.parse(u)
+    unless parsed.host
+      parsed = url.parse "http://#{parsed.href}"
+    parsed.host && parsed.href || null
+
+  _request: (conn, site_id, siteurl, cb) ->
+    site_url = @normalizeUrl(siteurl)
+    console.log "r: #{site_url}"
+    return cb("Invalid url: #{siteurl}") unless site_url
+    req = request(site_url)
 
     self = @
     req.setMaxListeners 50
@@ -96,68 +105,146 @@ class Subscriber
 
     req.on 'response', (res) ->
       stream = @
-      return cb(new Error "Invalid rss url: #{[site_id, url]} cause #{res.statusCode}") if res.statusCode != 200
+      return cb(new Error "Invalid rss url: #{[site_id, site_url]} cause #{res.statusCode}") if res.statusCode != 200
 
       charset = self._getParams(res.headers['content-type'] || '').charset
-      done = (stream) ->
-        if !/utf-*8/i.test(charset)
-          try
-            iconv = new Iconv charset, 'utf-8'
-            iconv.on 'error', self.next
-            stream = stream.pipe iconv
-          catch err
-            return cb(err)
-        stream.pipe feedparser        
 
-      unless charset
-        tmpfile = "/tmp/#{Date.now()}"
-        ws = fs.createWriteStream(tmpfile)
-        stream.pipe ws
+      links = []
+      parser = new htmlparser.Stream()
+      parser.on 'opentag', (name, attrs) ->
+        links.push attrs.href if name == 'a' && attrs.href
+      parser.on 'end', -> 
+        filtered = self.filterExLinks(site_url, links)
+        self.extractSites filtered, (err, contents) ->
+          return cb(err) if err
+          self.pushArticle conn, site_id, contents, (err) ->
+            return cb(err) if err
+            self.updateSubscribedTime conn, site_id, cb
+      stream.pipe parser
 
-        sax = Sax.createStream()
-        sax.on 'error', self.next
-        sax.on 'processinginstruction', (xml) ->
-          charset = self._getEncodingFromXmlInst(xml.body)
-        sax.on 'end', ->
-          rs = fs.createReadStream(tmpfile)
-          done(rs)
-          
-        stream = stream.pipe sax
-      else done(stream)
+  extractSites: (urls, cb) ->
+    contents = {}
 
-    posts = []
-    feedparser.on 'error', self.next
-    feedparser.on 'end', (err) ->
+    expected = urls.length
+    done = (_err) ->
+      #console.log _err if _err
+      return if --expected > 0
+      cb null, contents
+
+    for u in urls
+      @extractSite u, (err, content) ->
+        contents[content.url] = content if content
+        done(err)
+
+  extractSite: (site_url, cb) ->
+    console.log 'extract: '+ site_url
+    bp = new Boilerpipe
+      extractor: Boilerpipe.Extractor.ArticleSentences
+      url: site_url
+
+    bp.getText (err, text) ->
       return cb(err) if err
-      self.pushArticle conn, site_id, posts, (err) ->
-        return cb(err) if err
-        self.updateSubscribedTime conn, site_id, cb
-    feedparser.on 'readable', ->
-      while post = @read()
-        posts.push post
+      data = if text?.length > 0
+        url: site_url
+        title: text.substring(0, _.min([text.length,30]))
+        summary: text.substring(0, _.min([text.length,300]))
+        thumbnail: null
+        date: new Date()
+      else null
+      cb null, data
+    #bp.getHtml (err, html) -> 
+    #bp.getImages (err, images) -> 
+
+  extractSite2: (site_url, cb) ->
+    console.log 'extract: '+ site_url
+    request site_url, (err, res, body) ->
+      return cb(err) if err
+      $ = cheerio.load(body)
+
+      data =
+        url: site_url
+        title: $('title').text()
+        summary: $('title').text()
+        thumbnail: null
+        date: new Date()
+      cb null, data
+    
+
+  filterLinks: (site_url, links) ->
+    candis = {}
+    site = url.parse site_url
+    for l in links
+      target = url.parse l
+      if (!target.host || site.host == target.host) && target.pathname
+        candi = candis[target.pathname] ||= {}
+        candi[target.path] = target.path
+
+    selected = {}
+    selLen = 0
+    for pathname, paths of candis
+      if (len = Object.keys(paths).length) >= selLen
+        selected = paths
+        selLen = len
+
+    if selLen <= 1
+      return @filterExLinks(site_url, links)
+
+    base = "#{site.protocol || 'http:'}//#{site.host}"
+    Object.keys(selected).map (x) -> url.resolve base, x
+
+
+  filterExLinks: (site_url, links) ->
+    candis = {}
+    site = url.parse site_url
+    base = "#{site.protocol || 'http:'}//#{site.host}"
+    domain = @extractDomain(site.host)
+    for l in links
+      target = url.parse l
+      host = target.host || site.host
+      if host.indexOf(domain) >= 0 && target.path?.length > 1
+          candi = candis[host+target.pathname] ||= {}
+          href = target.host && target.href || url.resolve(base, target.href)
+          candi[href] = href
+
+    selected = {}
+    selLen = 0
+    for key, hrefs of candis
+      list = Object.keys hrefs
+      if (len = list.length) >= selLen
+        console.log [key, len]
+        selected = list
+        selLen = len
+
+    selected
+
+  extractDomain: (host) ->
+    parts = host.split('.')
+    len = parts.length
+    return host if len <= 2
+    if ['co', 'pe'].indexOf(parts[len-2]) >= 0
+      parts[len-3...len].join('.')
+    else
+      parts[len-2...len].join('.')
 
   updateSubscribedTime: (conn, site_id, cb) ->
     sql = 'update sites set subscribed_at = ? where id = ?;'
     conn.query sql, [Date.now(), site_id], cb
 
-  pushArticle: (conn, site_id, posts, cb) ->
+  pushArticle: (conn, site_id, contents, cb) ->
     params =[]
-    for p in posts
-      continue unless p.title && (p.description || p.summary) && p.link
-      created_at = new Date(p.pubdate)
-      created_at = new Date() if isNaN(created_at)
-      
-      params.push [site_id, p.link, p.title, (p.description || p.summary), p.image?.url || null, p?.categories.join(',') || null, created_at, new Date()]
+    for _url, data of contents
+      params.push [site_id, _url, data.title, data.summary, data.thumbnail, data.date, new Date()]
 
     return cb() if params.length == 0
 
-    sql = "insert ignore into articles (site_id, url, title, description, thumbnail, category, created_at, added_at) values #{params.map((p) -> '(?)').join(',')};"
+    sql = "insert ignore into articles (site_id, url, title, description, thumbnail, created_at, added_at) values #{params.map((p) -> '(?)').join(',')};"
     console.log "pushed #{params.length}"
     conn.query sql, params, cb
 
+
   _getEncodingFromXmlInst: (s) ->
     s = s.match(/encoding\w*=\".+\"/g)
-    return null if s.length == 0
+    return null if !s || s.length == 0
     s[0].substring(s[0].indexOf('=')+1).replace(/\"/g,'')
       
   _getParams: (s) ->
