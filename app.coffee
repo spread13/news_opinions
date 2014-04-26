@@ -18,8 +18,9 @@ Err = require("./lib/err")
 Load controllers.
 ###
 userController = require("./controllers/user")
-siteController = require("./controllers/site")
-opinionController = require("./controllers/opinion")
+castController = require("./controllers/cast")
+paperController = require("./controllers/paper")
+articleController = require("./controllers/article")
 
 ###
 API keys + Passport configuration.
@@ -111,21 +112,28 @@ app.use (err, req, res, next) ->
 Application routes.
 ###
 
-app.post "/sites/twitter", auth, siteController.addTwitter
-app.post "/sites", auth, siteController.create
-app.get "/sites", auth, siteController.list
-app.get "/sites/:id/articles", auth, siteController.articles
-app.del "/sites/:id", auth, siteController.del
-app.get "/articles", auth, siteController.myArticles
-
-app.post "/articles/:id/opinions", auth, opinionController.create
-app.get "/users/:id/opinions", auth, opinionController.list
-
 app.post "/login", userController.postLogin
 app.post "/users", userController.postSignup
 app.get "/me", auth, userController.get
 app.put "/me", auth, userController.update
-app.del "/me", auth, userController.del
+app.put "/me/del", auth, userController.del       # pwd를 인자로 받아야함
+
+app.post "/casts", auth, castController.create
+app.get "/casts", auth, castController.list       # 내 cast 목록
+app.del "/casts/:id", auth, castController.del
+
+app.put "/casts/:id/subscribe", auth, castController.subscribe
+app.put "/casts/:id/unsubscribe", auth, castController.unsubscribe
+app.get "/collections", auth, castController.collections
+
+app.post "/casts/:id/papers", auth, paperController.create
+app.get "/casts/:id/papers", auth, paperController.list
+app.put "/papers/:id/publish", auth, paperController.publish
+app.del "/papers/:id", auth, paperController.del
+
+app.post "/papers/:id/articles", auth, articleController.create
+app.get "/papers/:id/articles", auth, articleController.list
+app.del "/articles/:id", auth, articleController.del
 
 twitterOauth = new OAuth(
   'https://api.twitter.com/oauth/request_token',

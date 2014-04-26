@@ -33,7 +33,7 @@ Sign in using email and password.
 exports.postLogin = (req, res, next) ->
   unless VD.validEmail(req.body.email)
     return next(Err 400, "Invalid Email")
-  unless VD.validPassword(req.body.password)
+  unless VD.validPassword(req.body.pwd)
     return next(Err 400, "Invalid Password")
 
   req.getConnection (err, conn) ->
@@ -42,19 +42,19 @@ exports.postLogin = (req, res, next) ->
     conn.query 'select * from users where email = ?', [req.body.email], (err, rows) ->
       unless user = rows[0]
         return next(Err 404, "No such user")
-      if encPassword(req.body.password) != user.password
+      if encPassword(req.body.pwd) != user.password
         return next(Err 400, "Invalid email or password")
       res.json {token: createToken(user)}, 201
 
 ###
 POST /signup
 Create a new local account.
-@param email, password
+@param email, pwd
 ###
 exports.postSignup = (req, res, next) ->
   unless VD.validEmail(req.body.email)
     return next(Err 400, "Invalid Email")
-  unless VD.validPassword(req.body.password)
+  unless VD.validPassword(req.body.pwd)
     return next(Err 400, "Invalid Password")
 
   req.getConnection (err, conn) ->
@@ -64,7 +64,7 @@ exports.postSignup = (req, res, next) ->
       if rows.length > 0
         return next(Err 400, "User with that email already exists.")
 
-      conn.query "insert into users (email, password) values (?, ?)", [req.body.email, encPassword(req.body.password)], (err) ->
+      conn.query "insert into users (email, password) values (?, ?)", [req.body.email, encPassword(req.body.pwd)], (err) ->
         return next(err) if err
         conn.query "select * from users where email = ?", [req.body.email], (err, rows) ->
           return next(err) if err
